@@ -39,7 +39,7 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 	}
 }
 
-// Recovery is panic recovery middleware function
+// Recovery is a panic recovery middleware function
 func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		defer func() {
@@ -58,18 +58,22 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 		if err := n(w, r); err != nil {
 			le := Logger.WithField("type", "error")
 			jw := jsend.Wrap(w).Status(http.StatusInternalServerError).Message(err.Error())
-			if serr, ok := err.(*Error); ok {
-				if serr.Code() >= 400 && serr.Code() < 600 {
-					jw.Status(serr.Code())
+			if err, ok := err.(*Error); ok {
+				c := err.Code()
+				if c > 0 {
+					le = le.WithField("code", c)
 				}
-				if f := serr.Fields(); len(f) > 0 {
+				if c >= 400 && c < 600 {
+					jw.Status(c)
+				}
+				if f := err.Fields(); len(f) > 0 {
 					le = le.WithField("data", f)
 					jw.Data(f)
 				}
 			}
 			le.Error(err.Error())
-			_, serr := jw.Send()
-			return serr
+			_, err := jw.Send()
+			return err
 		}
 		return nil
 	}

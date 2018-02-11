@@ -74,10 +74,7 @@ func TestRequestLogging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := bytes.NewBuffer(nil)
-			l := logrus.New()
-			l.Formatter = new(logrus.JSONFormatter)
-			l.Out = b
-			withLogger(l, func() {
+			logTo(b, func() {
 				rec := httptest.NewRecorder()
 				err := strudel.RequestLogging(tt.fn)(rec, tt.req)
 				if err != tt.err {
@@ -141,10 +138,7 @@ func TestRecovery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := bytes.NewBuffer(nil)
-			l := logrus.New()
-			l.Formatter = new(logrus.JSONFormatter)
-			l.Out = b
-			withLogger(l, func() {
+			logTo(b, func() {
 				rec := httptest.NewRecorder()
 				err := strudel.Recovery(func(http.ResponseWriter, *http.Request) error {
 					return tt.fn()
@@ -186,8 +180,8 @@ func TestErrorHandling(t *testing.T) {
 			log:  map[string]interface{}{},
 		},
 		{
-			name: "should write invalid error codes as 500",
-			err:  strudel.NewError("error").WithCode(http.StatusOK),
+			name: "should not log error code if not specified",
+			err:  strudel.NewError("error"),
 			code: http.StatusInternalServerError,
 			body: map[string]interface{}{
 				"status":  "error",
@@ -200,7 +194,22 @@ func TestErrorHandling(t *testing.T) {
 			},
 		},
 		{
-			name: "should write 4xx error codes",
+			name: "should use status 500 if code is not HTTP status code",
+			err:  strudel.NewError("error").WithCode(1),
+			code: http.StatusInternalServerError,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": "error",
+			},
+			log: map[string]interface{}{
+				"type":  "error",
+				"level": "error",
+				"code":  1,
+				"msg":   "error",
+			},
+		},
+		{
+			name: "should use status 4xx if specified as error code",
 			err:  strudel.NewError("error").WithCode(http.StatusNotFound),
 			code: http.StatusNotFound,
 			body: map[string]interface{}{
@@ -211,11 +220,12 @@ func TestErrorHandling(t *testing.T) {
 			log: map[string]interface{}{
 				"type":  "error",
 				"level": "error",
+				"code":  http.StatusNotFound,
 				"msg":   "error",
 			},
 		},
 		{
-			name: "should write 5xx error codes",
+			name: "should use status 5xx if specified as error code",
 			err:  strudel.NewError("error").WithCode(http.StatusServiceUnavailable),
 			code: http.StatusServiceUnavailable,
 			body: map[string]interface{}{
@@ -225,6 +235,7 @@ func TestErrorHandling(t *testing.T) {
 			log: map[string]interface{}{
 				"type":  "error",
 				"level": "error",
+				"code":  http.StatusServiceUnavailable,
 				"msg":   "error",
 			},
 		},
@@ -262,10 +273,7 @@ func TestErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := bytes.NewBuffer(nil)
-			l := logrus.New()
-			l.Formatter = new(logrus.JSONFormatter)
-			l.Out = b
-			withLogger(l, func() {
+			logTo(b, func() {
 				rec := httptest.NewRecorder()
 				err := strudel.ErrorHandling(func(http.ResponseWriter, *http.Request) error {
 					return tt.err
@@ -294,20 +302,26 @@ func TestErrorHandling(t *testing.T) {
 						t.Errorf("got %v, expected nil", err)
 					}
 					delete(log, "time")
+					if c, ok := log["code"]; ok {
+						log["code"] = int(c.(float64))
+					}
 				}
 				if !reflect.DeepEqual(log, tt.log) {
-					t.Errorf("got %v, expected %v", log, tt.log)
+					t.Errorf("got %#v, expected %#v", log, tt.log)
 				}
 			})
 		})
 	}
 }
 
-func withLogger(l *logrus.Logger, fn func()) {
+func logTo(b *bytes.Buffer, fn func()) {
 	pl := strudel.Logger
 	defer func() {
 		strudel.Logger = pl
 	}()
+	l := logrus.New()
+	l.Formatter = new(logrus.JSONFormatter)
+	l.Out = b
 	strudel.Logger = l
 	fn()
 }

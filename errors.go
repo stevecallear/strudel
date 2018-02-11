@@ -22,7 +22,7 @@ func NewError(msg string) *Error {
 	}
 }
 
-// WithCode sets the specified error code
+// WithCode sets the error code
 func (e *Error) WithCode(code int) *Error {
 	e.code = code
 	return e
