@@ -1,7 +1,11 @@
 # Strudel
+[![Build Status](https://travis-ci.org/stevecallear/strudel.svg?branch=master)](https://travis-ci.org/stevecallear/strudel)
+[![codecov](https://codecov.io/gh/stevecallear/strudel/branch/master/graph/badge.svg)](https://codecov.io/gh/stevecallear/strudel)
+[![Go Report Card](https://goreportcard.com/badge/github.com/stevecallear/strudel)](https://goreportcard.com/report/github.com/stevecallear/strudel)
+
 Strudel provides structured error handling and logging middleware for use with [Janice](https://github.com/stevecallear/janice) handlers. It uses the excellent [Logrus](https://github.com/sirupsen/logrus), [jsend](https://github.com/gamegos/jsend) and [httpsnoop](https://github.com/felixge/httpsnoop) packages.
 
-The package is intended to help reduce the initial middleware boilerplate when building an HTTP API. Realistically error handing and logging requirements will change as an app develops, so the intention here is more to provide drop in/out components that allow rapid prototyping.
+The package is intended to help reduce the initial middleware boilerplate when building an HTTP API. Realistically, error handing and logging requirements will change as an app develops, so the intention here is to simply provide drop in/out components that allow rapid prototyping.
 
 ## Getting started
 ```
