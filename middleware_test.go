@@ -180,6 +180,20 @@ func TestErrorHandling(t *testing.T) {
 			log:  map[string]interface{}{},
 		},
 		{
+			name: "should not write other errors to the body",
+			err:  errors.New("error"),
+			code: http.StatusInternalServerError,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": http.StatusText(http.StatusInternalServerError),
+			},
+			log: map[string]interface{}{
+				"type":  "error",
+				"level": "error",
+				"msg":   "error",
+			},
+		},
+		{
 			name: "should not log error code if not specified",
 			err:  strudel.NewError("error"),
 			code: http.StatusInternalServerError,
@@ -236,20 +250,6 @@ func TestErrorHandling(t *testing.T) {
 				"type":  "error",
 				"level": "error",
 				"code":  http.StatusServiceUnavailable,
-				"msg":   "error",
-			},
-		},
-		{
-			name: "should handle other errors",
-			err:  errors.New("error"),
-			code: http.StatusInternalServerError,
-			body: map[string]interface{}{
-				"status":  "error",
-				"message": "error",
-			},
-			log: map[string]interface{}{
-				"type":  "error",
-				"level": "error",
 				"msg":   "error",
 			},
 		},

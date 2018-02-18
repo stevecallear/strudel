@@ -57,7 +57,9 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if err := n(w, r); err != nil {
 			le := Logger.WithField("type", "error")
-			jw := jsend.Wrap(w).Status(http.StatusInternalServerError).Message(err.Error())
+			jw := jsend.Wrap(w).
+				Status(http.StatusInternalServerError).
+				Message(http.StatusText(http.StatusInternalServerError))
 			if err, ok := err.(*Error); ok {
 				c := err.Code()
 				if c > 0 {
@@ -70,6 +72,7 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 					le = le.WithField("data", f)
 					jw.Data(f)
 				}
+				jw.Message(err.Error())
 			}
 			le.Error(err.Error())
 			_, err := jw.Send()
