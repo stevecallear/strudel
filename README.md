@@ -29,7 +29,8 @@ func main() {
 	m.Handle("/", c.Then(func(w http.ResponseWriter, r *http.Request) error {
 		return strudel.NewError("resource not found").
 			WithCode(http.StatusNotFound).
-			WithField("resourceId", "abc123")
+			WithField("resourceId", "abc123").
+			WithLogField("sensitiveId", "cde456")
 	}))
 	h := janice.New(strudel.Recovery, strudel.RequestLogging).Then(janice.Wrap(m))
 	http.ListenAndServe(":8080", h)
