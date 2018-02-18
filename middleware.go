@@ -66,13 +66,15 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 					le = le.WithField("code", c)
 				}
 				if c >= 400 && c < 600 {
-					jw.Status(c)
+					jw = jw.Status(c)
 				}
 				if f := err.Fields(); len(f) > 0 {
-					le = le.WithField("data", f)
-					jw.Data(f)
+					jw = jw.Data(f)
 				}
-				jw.Message(err.Error())
+				if lf := err.LogFields(); len(lf) > 0 {
+					le = le.WithField("data", lf)
+				}
+				jw = jw.Message(err.Error())
 			}
 			le.Error(err.Error())
 			_, err := jw.Send()

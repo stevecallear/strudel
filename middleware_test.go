@@ -254,7 +254,7 @@ func TestErrorHandling(t *testing.T) {
 			},
 		},
 		{
-			name: "should write error fields",
+			name: "should write error fields to log and body",
 			err:  strudel.NewError("error").WithField("key", "value"),
 			code: http.StatusInternalServerError,
 			body: map[string]interface{}{
@@ -267,6 +267,22 @@ func TestErrorHandling(t *testing.T) {
 				"level": "error",
 				"msg":   "error",
 				"data":  map[string]interface{}{"key": "value"},
+			},
+		},
+		{
+			name: "should not write error log fields to body",
+			err:  strudel.NewError("error").WithField("field", "value").WithLogField("logField", "value"),
+			code: http.StatusInternalServerError,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": "error",
+				"data":    map[string]interface{}{"field": "value"},
+			},
+			log: map[string]interface{}{
+				"type":  "error",
+				"level": "error",
+				"msg":   "error",
+				"data":  map[string]interface{}{"field": "value", "logField": "value"},
 			},
 		},
 	}
