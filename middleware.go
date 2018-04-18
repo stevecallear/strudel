@@ -1,17 +1,30 @@
 package strudel
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gamegos/jsend"
+	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
 	"github.com/stevecallear/janice"
 )
 
-// Logger is the logger used for all middleware
-var Logger *logrus.Logger
+var (
+	// Logger is the logger used for all middleware
+	Logger *logrus.Logger
+
+	// NextID returns the next unique id string
+	NextID = func() string {
+		return xid.New().String()
+	}
+
+	reqIDKey = contextKey("reqID")
+)
+
+type contextKey string
 
 func init() {
 	Logger = logrus.New()
@@ -28,6 +41,7 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 		})
 		Logger.WithFields(logrus.Fields{
 			"type":     "request",
+			"request":  NextID(),
 			"host":     r.Host,
 			"method":   r.Method,
 			"path":     p,
@@ -82,4 +96,14 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 		}
 		return nil
 	}
+}
+
+func setReqID(r *http.Request, v string) *http.Request {
+	ctx := context.WithValue(r.Context(), reqIDKey, v)
+	return r.WithContext(ctx)
+}
+
+func getReqID(r *http.Request) string {
+	v, _ := r.Context().Value(reqIDKey).(string)
+	return v
 }

@@ -18,79 +18,88 @@ import (
 func TestRequestLogging(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
-		name string
-		req  *http.Request
-		fn   janice.HandlerFunc
-		exp  map[string]interface{}
-		err  error
+		name  string
+		reqID string
+		req   *http.Request
+		fn    janice.HandlerFunc
+		exp   map[string]interface{}
+		err   error
 	}{
 		{
-			name: "should handle errors",
-			req:  httptest.NewRequest("GET", "/path", nil),
+			name:  "should handle errors",
+			reqID: "requestId",
+			req:   httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusInternalServerError)
 				return err
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "GET",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "500",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "GET",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "500",
 			},
 			err: err,
 		},
 		{
-			name: "should log the status code",
-			req:  httptest.NewRequest("GET", "/path", nil),
+			name:  "should log the status code",
+			reqID: "requestId",
+			req:   httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusMovedPermanently)
 				return nil
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "GET",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "301",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "GET",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "301",
 			},
 		},
 		{
-			name: "should log the method",
-			req:  httptest.NewRequest("POST", "/path", nil),
+			name:  "should log the method",
+			reqID: "requestId",
+			req:   httptest.NewRequest("POST", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusCreated)
 				return nil
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "POST",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "201",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "POST",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "201",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := bytes.NewBuffer(nil)
-			logTo(b, func() {
-				rec := httptest.NewRecorder()
-				err := strudel.RequestLogging(tt.fn)(rec, tt.req)
-				if err != tt.err {
-					t.Errorf("got %v, expected %v", err, tt.err)
-				}
-				act := map[string]interface{}{}
-				if b.Len() > 0 {
-					if err = json.Unmarshal(b.Bytes(), &act); err != nil {
-						t.Errorf("got %v, expected nil", err)
+			withNextID(tt.reqID, func() {
+				logTo(b, func() {
+					rec := httptest.NewRecorder()
+					err := strudel.RequestLogging(tt.fn)(rec, tt.req)
+					if err != tt.err {
+						t.Errorf("got %v, expected %v", err, tt.err)
 					}
-				}
-				for k, v := range tt.exp {
-					if act[k] != v {
-						t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+					act := map[string]interface{}{}
+					if b.Len() > 0 {
+						if err = json.Unmarshal(b.Bytes(), &act); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
 					}
-				}
+					for k, v := range tt.exp {
+						if act[k] != v {
+							t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+						}
+					}
+				})
 			})
 		})
 	}
@@ -339,5 +348,16 @@ func logTo(b *bytes.Buffer, fn func()) {
 	l.Formatter = new(logrus.JSONFormatter)
 	l.Out = b
 	strudel.Logger = l
+	fn()
+}
+
+func withNextID(v string, fn func()) {
+	ni := strudel.NextID
+	defer func() {
+		strudel.NextID = ni
+	}()
+	strudel.NextID = func() string {
+		return v
+	}
 	fn()
 }
