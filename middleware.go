@@ -33,25 +33,35 @@ func init() {
 	Logger.Formatter = new(logrus.JSONFormatter)
 }
 
+// RequestTracking is a request tracking middleware function
+func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := context.WithValue(r.Context(), reqIDKey, NextID())
+		return n(w, r.WithContext(ctx))
+	}
+}
+
 // RequestLogging is a request logging middleware function
 func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		p := r.URL.String()
-		rid := NextID()
 		var err error
 		m := httpsnoop.CaptureMetricsFn(w, func(ww http.ResponseWriter) {
-			err = n(ww, setReqID(r, rid))
+			err = n(ww, r)
 		})
-		Logger.WithFields(logrus.Fields{
+		le := Logger.WithFields(logrus.Fields{
 			"type":     "request",
-			"request":  rid,
 			"host":     r.Host,
 			"method":   r.Method,
 			"path":     p,
 			"code":     strconv.Itoa(m.Code),
 			"duration": m.Duration.String(),
 			"written":  strconv.FormatInt(m.Written, 10),
-		}).Info()
+		})
+		if rid, ok := getReqID(r); ok {
+			le = le.WithField("request", rid)
+		}
+		le.Info()
 		return err
 	}
 }
@@ -106,11 +116,6 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 		}
 		return nil
 	}
-}
-
-func setReqID(r *http.Request, v string) *http.Request {
-	ctx := context.WithValue(r.Context(), reqIDKey, v)
-	return r.WithContext(ctx)
 }
 
 func getReqID(r *http.Request) (string, bool) {

@@ -32,7 +32,7 @@ func main() {
 			WithField("resourceId", "abc123").
 			WithLogField("sensitiveId", "cde456")
 	}))
-	h := janice.New(strudel.Recovery, strudel.RequestLogging).Then(janice.Wrap(m))
+	h := janice.New(strudel.RequestTracking, strudel.Recovery, strudel.RequestLogging).Then(janice.Wrap(m))
 	http.ListenAndServe(":8080", h)
 }
 ```

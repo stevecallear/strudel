@@ -82,24 +82,31 @@ func TestRequestLogging(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withNextID(tt.rid), withLogger(buf))
-			rec := httptest.NewRecorder()
-			err := mw.Append(strudel.RequestLogging)(tt.fn)(rec, tt.req)
-			if err != tt.err {
-				t.Errorf("got %v, expected %v", err, tt.err)
-			}
-			act := map[string]interface{}{}
-			if buf.Len() > 0 {
-				if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
-					t.Errorf("got %v, expected nil", err)
-				}
-			}
-			for k, v := range tt.exp {
-				if act[k] != v {
-					t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
-				}
-			}
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
+					}
+					rec := httptest.NewRecorder()
+					err := mw.Append(strudel.RequestLogging)(tt.fn)(rec, tt.req)
+					if err != tt.err {
+						t.Errorf("got %v, expected %v", err, tt.err)
+					}
+					act := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+					}
+					for k, v := range tt.exp {
+						if act[k] != v {
+							t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+						}
+					}
+				})
+			})
 		})
 	}
 }
@@ -160,32 +167,37 @@ func TestRecovery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withLogger(bytes.NewBuffer(nil)))
-			if tt.rid != "" {
-				mw = mw.Append(withNextID(tt.rid), strudel.RequestLogging)
-			}
-			rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
-			err := mw.Append(withLogger(buf), strudel.Recovery)(func(http.ResponseWriter, *http.Request) error {
-				return tt.fn()
-			})(rec, req)
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
+					}
+					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+					err := mw.Append(strudel.Recovery)(func(http.ResponseWriter, *http.Request) error {
+						return tt.fn()
+					})(rec, req)
 
-			if err != tt.err {
-				t.Errorf("got %v, expected %v", err, tt.err)
-			}
-			if rec.Code != tt.code {
-				t.Errorf("got %d, expected %d", rec.Code, tt.code)
-			}
-			act := map[string]interface{}{}
-			if buf.Len() > 0 {
-				if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
-					t.Errorf("got %v, expected nil", err)
-				}
-				delete(act, "time")
-			}
-			if !reflect.DeepEqual(act, tt.exp) {
-				t.Errorf("got %v, expected %v", act, tt.exp)
-			}
+					if err != tt.err {
+						t.Errorf("got %v, expected %v", err, tt.err)
+					}
+					if rec.Code != tt.code {
+						t.Errorf("got %d, expected %d", rec.Code, tt.code)
+					}
+					act := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+						delete(act, "time")
+					}
+					if !reflect.DeepEqual(act, tt.exp) {
+						t.Errorf("got %v, expected %v", act, tt.exp)
+					}
+				})
+			})
+
 		})
 	}
 }
@@ -347,46 +359,50 @@ func TestErrorHandling(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withLogger(bytes.NewBuffer(nil)))
-			if tt.rid != "" {
-				mw = mw.Append(withNextID(tt.rid), strudel.RequestLogging)
-			}
-			rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
-			err := mw.Append(withLogger(buf), strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
-				return tt.err
-			})(rec, req)
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
+					}
+					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+					err := mw.Append(strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
+						return tt.err
+					})(rec, req)
 
-			if err != nil {
-				t.Errorf("got %v, expected nil", err)
-			}
-			if rec.Code != tt.code {
-				t.Errorf("got %d, expected %d", rec.Code, tt.code)
-			}
+					if err != nil {
+						t.Errorf("got %v, expected nil", err)
+					}
+					if rec.Code != tt.code {
+						t.Errorf("got %d, expected %d", rec.Code, tt.code)
+					}
 
-			body := map[string]interface{}{}
-			if rec.Body.Len() > 0 {
-				if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-					t.Errorf("got %v, expected nil", err)
-				}
-			}
-			if !reflect.DeepEqual(body, tt.body) {
-				t.Errorf("got %v, expected %v", body, tt.body)
-			}
+					body := map[string]interface{}{}
+					if rec.Body.Len() > 0 {
+						if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+					}
+					if !reflect.DeepEqual(body, tt.body) {
+						t.Errorf("got %v, expected %v", body, tt.body)
+					}
 
-			log := map[string]interface{}{}
-			if buf.Len() > 0 {
-				if err = json.Unmarshal(buf.Bytes(), &log); err != nil {
-					t.Errorf("got %v, expected nil", err)
-				}
-				delete(log, "time")
-				if c, ok := log["code"]; ok {
-					log["code"] = int(c.(float64))
-				}
-			}
-			if !reflect.DeepEqual(log, tt.log) {
-				t.Errorf("got %#v, expected %#v", log, tt.log)
-			}
+					log := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &log); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+						delete(log, "time")
+						if c, ok := log["code"]; ok {
+							log["code"] = int(c.(float64))
+						}
+					}
+					if !reflect.DeepEqual(log, tt.log) {
+						t.Errorf("got %#v, expected %#v", log, tt.log)
+					}
+				})
+			})
 		})
 	}
 }
@@ -401,36 +417,25 @@ func TestNextID(t *testing.T) {
 	})
 }
 
-func withLogger(w io.Writer) janice.MiddlewareFunc {
-	nl := func() *logrus.Logger {
-		l := logrus.New()
-		l.Formatter = new(logrus.JSONFormatter)
-		l.Out = w
-		return l
-	}
-	return func(n janice.HandlerFunc) janice.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) error {
-			pl := strudel.Logger
-			defer func() {
-				strudel.Logger = pl
-			}()
-			strudel.Logger = nl()
-			return n(w, r)
-		}
-	}
+func withLogger(w io.Writer, fn func()) {
+	pl := strudel.Logger
+	defer func() {
+		strudel.Logger = pl
+	}()
+	l := logrus.New()
+	l.Formatter = new(logrus.JSONFormatter)
+	l.Out = w
+	strudel.Logger = l
+	fn()
 }
 
-func withNextID(v string) janice.MiddlewareFunc {
-	return func(n janice.HandlerFunc) janice.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) error {
-			pfn := strudel.NextID
-			defer func() {
-				strudel.NextID = pfn
-			}()
-			strudel.NextID = func() string {
-				return v
-			}
-			return n(w, r)
-		}
+func withNextID(v string, fn func()) {
+	pfn := strudel.NextID
+	defer func() {
+		strudel.NextID = pfn
+	}()
+	strudel.NextID = func() string {
+		return v
 	}
+	fn()
 }
