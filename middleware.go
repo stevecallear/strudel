@@ -35,13 +35,14 @@ func init() {
 func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		p := r.URL.String()
+		rid := NextID()
 		var err error
 		m := httpsnoop.CaptureMetricsFn(w, func(ww http.ResponseWriter) {
-			err = n(ww, r)
+			err = n(ww, setReqID(r, rid))
 		})
 		Logger.WithFields(logrus.Fields{
 			"type":     "request",
-			"request":  NextID(),
+			"request":  rid,
 			"host":     r.Host,
 			"method":   r.Method,
 			"path":     p,
@@ -57,8 +58,12 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		defer func() {
-			if r := recover(); r != nil {
-				Logger.WithField("type", "recovery").Error(r)
+			if rec := recover(); rec != nil {
+				le := Logger.WithField("type", "recovery")
+				if rid := getReqID(r); rid != "" {
+					le = le.WithField("request", rid)
+				}
+				le.Error(rec)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()
