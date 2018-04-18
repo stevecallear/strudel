@@ -17,6 +17,23 @@ import (
 	"github.com/stevecallear/strudel"
 )
 
+func TestRequestTracking(t *testing.T) {
+	t.Run("should set the request id", func(t *testing.T) {
+		rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+		err := strudel.RequestTracking(func(w http.ResponseWriter, r *http.Request) error {
+			exp := regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+			act, _ := strudel.GetRequestID(r)
+			if !exp.MatchString(act) {
+				t.Errorf("got %s, expected a valid uuid", act)
+			}
+			return nil
+		})(rec, req)
+		if err != nil {
+			t.Errorf("got %v, expected nil", err)
+		}
+	})
+}
+
 func TestRequestLogging(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
@@ -82,18 +99,15 @@ func TestRequestLogging(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withNextID(tt.rid, func() {
+			withRequestID(tt.rid, func() {
 				buf := bytes.NewBuffer(nil)
 				withLogger(buf, func() {
-					mw := janice.New()
-					if tt.rid != "" {
-						mw = mw.Append(strudel.RequestTracking)
-					}
 					rec := httptest.NewRecorder()
-					err := mw.Append(strudel.RequestLogging)(tt.fn)(rec, tt.req)
+					err := strudel.RequestLogging(tt.fn)(rec, tt.req)
 					if err != tt.err {
 						t.Errorf("got %v, expected %v", err, tt.err)
 					}
+
 					act := map[string]interface{}{}
 					if buf.Len() > 0 {
 						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
@@ -167,24 +181,20 @@ func TestRecovery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withNextID(tt.rid, func() {
+			withRequestID(tt.rid, func() {
 				buf := bytes.NewBuffer(nil)
 				withLogger(buf, func() {
-					mw := janice.New()
-					if tt.rid != "" {
-						mw = mw.Append(strudel.RequestTracking)
-					}
-					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
-					err := mw.Append(strudel.Recovery)(func(http.ResponseWriter, *http.Request) error {
+					rec := httptest.NewRecorder()
+					err := strudel.Recovery(func(http.ResponseWriter, *http.Request) error {
 						return tt.fn()
-					})(rec, req)
-
+					})(rec, nil)
 					if err != tt.err {
 						t.Errorf("got %v, expected %v", err, tt.err)
 					}
 					if rec.Code != tt.code {
 						t.Errorf("got %d, expected %d", rec.Code, tt.code)
 					}
+
 					act := map[string]interface{}{}
 					if buf.Len() > 0 {
 						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
@@ -359,18 +369,13 @@ func TestErrorHandling(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withNextID(tt.rid, func() {
+			withRequestID(tt.rid, func() {
 				buf := bytes.NewBuffer(nil)
 				withLogger(buf, func() {
-					mw := janice.New()
-					if tt.rid != "" {
-						mw = mw.Append(strudel.RequestTracking)
-					}
-					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
-					err := mw.Append(strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
+					rec := httptest.NewRecorder()
+					err := strudel.ErrorHandling(func(http.ResponseWriter, *http.Request) error {
 						return tt.err
-					})(rec, req)
-
+					})(rec, nil)
 					if err != nil {
 						t.Errorf("got %v, expected nil", err)
 					}
@@ -407,16 +412,6 @@ func TestErrorHandling(t *testing.T) {
 	}
 }
 
-func TestNextID(t *testing.T) {
-	t.Run("should return a valid uuid", func(t *testing.T) {
-		exp := regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-		act := strudel.NextID()
-		if !exp.MatchString(act) {
-			t.Errorf("got %s, expected a valid uuid", act)
-		}
-	})
-}
-
 func withLogger(w io.Writer, fn func()) {
 	pl := strudel.Logger
 	defer func() {
@@ -429,13 +424,13 @@ func withLogger(w io.Writer, fn func()) {
 	fn()
 }
 
-func withNextID(v string, fn func()) {
-	pfn := strudel.NextID
+func withRequestID(v string, fn func()) {
+	pfn := strudel.GetRequestID
 	defer func() {
-		strudel.NextID = pfn
+		strudel.GetRequestID = pfn
 	}()
-	strudel.NextID = func() string {
-		return v
+	strudel.GetRequestID = func(*http.Request) (string, bool) {
+		return v, v != ""
 	}
 	fn()
 }
