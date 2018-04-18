@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -19,17 +20,17 @@ import (
 func TestRequestLogging(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
-		name  string
-		reqID string
-		req   *http.Request
-		fn    janice.HandlerFunc
-		exp   map[string]interface{}
-		err   error
+		name string
+		rid  string
+		req  *http.Request
+		fn   janice.HandlerFunc
+		exp  map[string]interface{}
+		err  error
 	}{
 		{
-			name:  "should handle errors",
-			reqID: "requestId",
-			req:   httptest.NewRequest("GET", "/path", nil),
+			name: "should handle errors",
+			rid:  "requestId",
+			req:  httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusInternalServerError)
 				return err
@@ -45,9 +46,9 @@ func TestRequestLogging(t *testing.T) {
 			err: err,
 		},
 		{
-			name:  "should log the status code",
-			reqID: "requestId",
-			req:   httptest.NewRequest("GET", "/path", nil),
+			name: "should log the status code",
+			rid:  "requestId",
+			req:  httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusMovedPermanently)
 				return nil
@@ -62,9 +63,9 @@ func TestRequestLogging(t *testing.T) {
 			},
 		},
 		{
-			name:  "should log the method",
-			reqID: "requestId",
-			req:   httptest.NewRequest("POST", "/path", nil),
+			name: "should log the method",
+			rid:  "requestId",
+			req:  httptest.NewRequest("POST", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusCreated)
 				return nil
@@ -82,7 +83,7 @@ func TestRequestLogging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withNextID(tt.reqID), withLogger(buf))
+			mw := janice.New(withNextID(tt.rid), withLogger(buf))
 			rec := httptest.NewRecorder()
 			err := mw.Append(strudel.RequestLogging)(tt.fn)(rec, tt.req)
 			if err != tt.err {
@@ -106,12 +107,12 @@ func TestRequestLogging(t *testing.T) {
 func TestRecovery(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
-		name  string
-		reqID string
-		fn    func() error
-		code  int
-		exp   map[string]interface{}
-		err   error
+		name string
+		rid  string
+		fn   func() error
+		code int
+		exp  map[string]interface{}
+		err  error
 	}{
 		{
 			name: "should do nothing if there is no panic",
@@ -143,8 +144,8 @@ func TestRecovery(t *testing.T) {
 			},
 		},
 		{
-			name:  "should log the request id if it has been set",
-			reqID: "requestId",
+			name: "should log the request id if it has been set",
+			rid:  "requestId",
 			fn: func() error {
 				panic(err)
 			},
@@ -160,9 +161,9 @@ func TestRecovery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withNextID(tt.reqID), withLogger(bytes.NewBuffer(nil)))
-			if tt.reqID != "" {
-				mw = mw.Append(strudel.RequestLogging)
+			mw := janice.New(withLogger(bytes.NewBuffer(nil)))
+			if tt.rid != "" {
+				mw = mw.Append(withNextID(tt.rid), strudel.RequestLogging)
 			}
 			rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
 			err := mw.Append(withLogger(buf), strudel.Recovery)(func(http.ResponseWriter, *http.Request) error {
@@ -192,6 +193,7 @@ func TestRecovery(t *testing.T) {
 func TestErrorHandling(t *testing.T) {
 	tests := []struct {
 		name string
+		rid  string
 		err  error
 		code int
 		body map[string]interface{}
@@ -278,6 +280,39 @@ func TestErrorHandling(t *testing.T) {
 			},
 		},
 		{
+			name: "should log the request id if it has been set",
+			rid:  "requestId",
+			err:  strudel.NewError("error").WithCode(http.StatusServiceUnavailable),
+			code: http.StatusServiceUnavailable,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": "error",
+			},
+			log: map[string]interface{}{
+				"type":    "error",
+				"level":   "error",
+				"request": "requestId",
+				"code":    http.StatusServiceUnavailable,
+				"msg":     "error",
+			},
+		},
+		{
+			name: "should log the request id for other errors",
+			rid:  "requestId",
+			err:  errors.New("error"),
+			code: http.StatusInternalServerError,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": http.StatusText(http.StatusInternalServerError),
+			},
+			log: map[string]interface{}{
+				"type":    "error",
+				"request": "requestId",
+				"level":   "error",
+				"msg":     "error",
+			},
+		},
+		{
 			name: "should write error fields to log and body",
 			err:  strudel.NewError("error").WithField("key", "value"),
 			code: http.StatusInternalServerError,
@@ -313,11 +348,14 @@ func TestErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
-			mw := janice.New(withLogger(buf))
-			rec := httptest.NewRecorder()
-			err := mw.Append(strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
+			mw := janice.New(withLogger(bytes.NewBuffer(nil)))
+			if tt.rid != "" {
+				mw = mw.Append(withNextID(tt.rid), strudel.RequestLogging)
+			}
+			rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+			err := mw.Append(withLogger(buf), strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
 				return tt.err
-			})(rec, nil)
+			})(rec, req)
 
 			if err != nil {
 				t.Errorf("got %v, expected nil", err)
@@ -351,6 +389,16 @@ func TestErrorHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNextID(t *testing.T) {
+	t.Run("should return a valid uuid", func(t *testing.T) {
+		exp := regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+		act := strudel.NextID()
+		if !exp.MatchString(act) {
+			t.Errorf("got %s, expected a valid uuid", act)
+		}
+	})
 }
 
 func withLogger(w io.Writer) janice.MiddlewareFunc {

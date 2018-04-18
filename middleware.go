@@ -7,9 +7,10 @@ import (
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gamegos/jsend"
-	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
 	"github.com/stevecallear/janice"
+
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -18,10 +19,11 @@ var (
 
 	// NextID returns the next unique id string
 	NextID = func() string {
-		return xid.New().String()
+		u := uuid.Must(uuid.NewV4())
+		return u.String()
 	}
 
-	reqIDKey = contextKey("reqID")
+	reqIDKey = contextKey("requestid")
 )
 
 type contextKey string
@@ -60,7 +62,7 @@ func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 		defer func() {
 			if rec := recover(); rec != nil {
 				le := Logger.WithField("type", "recovery")
-				if rid := getReqID(r); rid != "" {
+				if rid, ok := getReqID(r); ok {
 					le = le.WithField("request", rid)
 				}
 				le.Error(rec)
@@ -95,6 +97,9 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 				}
 				jw = jw.Message(err.Error())
 			}
+			if rid, ok := getReqID(r); ok {
+				le = le.WithField("request", rid)
+			}
 			le.Error(err.Error())
 			_, err := jw.Send()
 			return err
@@ -108,7 +113,7 @@ func setReqID(r *http.Request, v string) *http.Request {
 	return r.WithContext(ctx)
 }
 
-func getReqID(r *http.Request) string {
+func getReqID(r *http.Request) (string, bool) {
 	v, _ := r.Context().Value(reqIDKey).(string)
-	return v
+	return v, v != ""
 }
