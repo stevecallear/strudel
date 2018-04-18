@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -19,6 +21,7 @@ func TestRequestLogging(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
 		name string
+		rid  string
 		req  *http.Request
 		fn   janice.HandlerFunc
 		exp  map[string]interface{}
@@ -26,71 +29,83 @@ func TestRequestLogging(t *testing.T) {
 	}{
 		{
 			name: "should handle errors",
+			rid:  "requestId",
 			req:  httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusInternalServerError)
 				return err
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "GET",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "500",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "GET",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "500",
 			},
 			err: err,
 		},
 		{
 			name: "should log the status code",
+			rid:  "requestId",
 			req:  httptest.NewRequest("GET", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusMovedPermanently)
 				return nil
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "GET",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "301",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "GET",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "301",
 			},
 		},
 		{
 			name: "should log the method",
+			rid:  "requestId",
 			req:  httptest.NewRequest("POST", "/path", nil),
 			fn: func(w http.ResponseWriter, _ *http.Request) error {
 				w.WriteHeader(http.StatusCreated)
 				return nil
 			},
 			exp: map[string]interface{}{
-				"type":   "request",
-				"method": "POST",
-				"host":   "example.com",
-				"path":   "/path",
-				"code":   "201",
+				"type":    "request",
+				"request": "requestId",
+				"method":  "POST",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    "201",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := bytes.NewBuffer(nil)
-			logTo(b, func() {
-				rec := httptest.NewRecorder()
-				err := strudel.RequestLogging(tt.fn)(rec, tt.req)
-				if err != tt.err {
-					t.Errorf("got %v, expected %v", err, tt.err)
-				}
-				act := map[string]interface{}{}
-				if b.Len() > 0 {
-					if err = json.Unmarshal(b.Bytes(), &act); err != nil {
-						t.Errorf("got %v, expected nil", err)
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
 					}
-				}
-				for k, v := range tt.exp {
-					if act[k] != v {
-						t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+					rec := httptest.NewRecorder()
+					err := mw.Append(strudel.RequestLogging)(tt.fn)(rec, tt.req)
+					if err != tt.err {
+						t.Errorf("got %v, expected %v", err, tt.err)
 					}
-				}
+					act := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+					}
+					for k, v := range tt.exp {
+						if act[k] != v {
+							t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+						}
+					}
+				})
 			})
 		})
 	}
@@ -100,6 +115,7 @@ func TestRecovery(t *testing.T) {
 	err := errors.New("error")
 	tests := []struct {
 		name string
+		rid  string
 		fn   func() error
 		code int
 		exp  map[string]interface{}
@@ -134,33 +150,54 @@ func TestRecovery(t *testing.T) {
 				"msg":   "error",
 			},
 		},
+		{
+			name: "should log the request id if it has been set",
+			rid:  "requestId",
+			fn: func() error {
+				panic(err)
+			},
+			code: http.StatusInternalServerError,
+			exp: map[string]interface{}{
+				"type":    "recovery",
+				"level":   "error",
+				"request": "requestId",
+				"msg":     "error",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := bytes.NewBuffer(nil)
-			logTo(b, func() {
-				rec := httptest.NewRecorder()
-				err := strudel.Recovery(func(http.ResponseWriter, *http.Request) error {
-					return tt.fn()
-				})(rec, nil)
-
-				if err != tt.err {
-					t.Errorf("got %v, expected %v", err, tt.err)
-				}
-				if rec.Code != tt.code {
-					t.Errorf("got %d, expected %d", rec.Code, tt.code)
-				}
-				act := map[string]interface{}{}
-				if b.Len() > 0 {
-					if err = json.Unmarshal(b.Bytes(), &act); err != nil {
-						t.Errorf("got %v, expected nil", err)
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
 					}
-					delete(act, "time")
-				}
-				if !reflect.DeepEqual(act, tt.exp) {
-					t.Errorf("got %v, expected %v", act, tt.exp)
-				}
+					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+					err := mw.Append(strudel.Recovery)(func(http.ResponseWriter, *http.Request) error {
+						return tt.fn()
+					})(rec, req)
+
+					if err != tt.err {
+						t.Errorf("got %v, expected %v", err, tt.err)
+					}
+					if rec.Code != tt.code {
+						t.Errorf("got %d, expected %d", rec.Code, tt.code)
+					}
+					act := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+						delete(act, "time")
+					}
+					if !reflect.DeepEqual(act, tt.exp) {
+						t.Errorf("got %v, expected %v", act, tt.exp)
+					}
+				})
 			})
+
 		})
 	}
 }
@@ -168,6 +205,7 @@ func TestRecovery(t *testing.T) {
 func TestErrorHandling(t *testing.T) {
 	tests := []struct {
 		name string
+		rid  string
 		err  error
 		code int
 		body map[string]interface{}
@@ -254,6 +292,39 @@ func TestErrorHandling(t *testing.T) {
 			},
 		},
 		{
+			name: "should log the request id if it has been set",
+			rid:  "requestId",
+			err:  strudel.NewError("error").WithCode(http.StatusServiceUnavailable),
+			code: http.StatusServiceUnavailable,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": "error",
+			},
+			log: map[string]interface{}{
+				"type":    "error",
+				"level":   "error",
+				"request": "requestId",
+				"code":    http.StatusServiceUnavailable,
+				"msg":     "error",
+			},
+		},
+		{
+			name: "should log the request id for other errors",
+			rid:  "requestId",
+			err:  errors.New("error"),
+			code: http.StatusInternalServerError,
+			body: map[string]interface{}{
+				"status":  "error",
+				"message": http.StatusText(http.StatusInternalServerError),
+			},
+			log: map[string]interface{}{
+				"type":    "error",
+				"request": "requestId",
+				"level":   "error",
+				"msg":     "error",
+			},
+		},
+		{
 			name: "should write error fields to log and body",
 			err:  strudel.NewError("error").WithField("key", "value"),
 			code: http.StatusInternalServerError,
@@ -288,56 +359,83 @@ func TestErrorHandling(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := bytes.NewBuffer(nil)
-			logTo(b, func() {
-				rec := httptest.NewRecorder()
-				err := strudel.ErrorHandling(func(http.ResponseWriter, *http.Request) error {
-					return tt.err
-				})(rec, nil)
+			withNextID(tt.rid, func() {
+				buf := bytes.NewBuffer(nil)
+				withLogger(buf, func() {
+					mw := janice.New()
+					if tt.rid != "" {
+						mw = mw.Append(strudel.RequestTracking)
+					}
+					rec, req := httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+					err := mw.Append(strudel.ErrorHandling)(func(http.ResponseWriter, *http.Request) error {
+						return tt.err
+					})(rec, req)
 
-				if err != nil {
-					t.Errorf("got %v, expected nil", err)
-				}
-				if rec.Code != tt.code {
-					t.Errorf("got %d, expected %d", rec.Code, tt.code)
-				}
-
-				body := map[string]interface{}{}
-				if rec.Body.Len() > 0 {
-					if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					if err != nil {
 						t.Errorf("got %v, expected nil", err)
 					}
-				}
-				if !reflect.DeepEqual(body, tt.body) {
-					t.Errorf("got %v, expected %v", body, tt.body)
-				}
+					if rec.Code != tt.code {
+						t.Errorf("got %d, expected %d", rec.Code, tt.code)
+					}
 
-				log := map[string]interface{}{}
-				if b.Len() > 0 {
-					if err = json.Unmarshal(b.Bytes(), &log); err != nil {
-						t.Errorf("got %v, expected nil", err)
+					body := map[string]interface{}{}
+					if rec.Body.Len() > 0 {
+						if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
 					}
-					delete(log, "time")
-					if c, ok := log["code"]; ok {
-						log["code"] = int(c.(float64))
+					if !reflect.DeepEqual(body, tt.body) {
+						t.Errorf("got %v, expected %v", body, tt.body)
 					}
-				}
-				if !reflect.DeepEqual(log, tt.log) {
-					t.Errorf("got %#v, expected %#v", log, tt.log)
-				}
+
+					log := map[string]interface{}{}
+					if buf.Len() > 0 {
+						if err = json.Unmarshal(buf.Bytes(), &log); err != nil {
+							t.Errorf("got %v, expected nil", err)
+						}
+						delete(log, "time")
+						if c, ok := log["code"]; ok {
+							log["code"] = int(c.(float64))
+						}
+					}
+					if !reflect.DeepEqual(log, tt.log) {
+						t.Errorf("got %#v, expected %#v", log, tt.log)
+					}
+				})
 			})
 		})
 	}
 }
 
-func logTo(b *bytes.Buffer, fn func()) {
+func TestNextID(t *testing.T) {
+	t.Run("should return a valid uuid", func(t *testing.T) {
+		exp := regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+		act := strudel.NextID()
+		if !exp.MatchString(act) {
+			t.Errorf("got %s, expected a valid uuid", act)
+		}
+	})
+}
+
+func withLogger(w io.Writer, fn func()) {
 	pl := strudel.Logger
 	defer func() {
 		strudel.Logger = pl
 	}()
 	l := logrus.New()
 	l.Formatter = new(logrus.JSONFormatter)
-	l.Out = b
+	l.Out = w
 	strudel.Logger = l
+	fn()
+}
+
+func withNextID(v string, fn func()) {
+	pfn := strudel.NextID
+	defer func() {
+		strudel.NextID = pfn
+	}()
+	strudel.NextID = func() string {
+		return v
+	}
 	fn()
 }

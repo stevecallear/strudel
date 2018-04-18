@@ -1,6 +1,7 @@
 package strudel
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -8,14 +9,36 @@ import (
 	"github.com/gamegos/jsend"
 	"github.com/sirupsen/logrus"
 	"github.com/stevecallear/janice"
+
+	uuid "github.com/satori/go.uuid"
 )
 
-// Logger is the logger used for all middleware
-var Logger *logrus.Logger
+var (
+	// Logger is the logger used for all middleware
+	Logger *logrus.Logger
+
+	// NextID returns the next unique id string
+	NextID = func() string {
+		u := uuid.Must(uuid.NewV4())
+		return u.String()
+	}
+
+	reqIDKey = contextKey("requestid")
+)
+
+type contextKey string
 
 func init() {
 	Logger = logrus.New()
 	Logger.Formatter = new(logrus.JSONFormatter)
+}
+
+// RequestTracking is a request tracking middleware function
+func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := context.WithValue(r.Context(), reqIDKey, NextID())
+		return n(w, r.WithContext(ctx))
+	}
 }
 
 // RequestLogging is a request logging middleware function
@@ -26,7 +49,7 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 		m := httpsnoop.CaptureMetricsFn(w, func(ww http.ResponseWriter) {
 			err = n(ww, r)
 		})
-		Logger.WithFields(logrus.Fields{
+		le := Logger.WithFields(logrus.Fields{
 			"type":     "request",
 			"host":     r.Host,
 			"method":   r.Method,
@@ -34,7 +57,11 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 			"code":     strconv.Itoa(m.Code),
 			"duration": m.Duration.String(),
 			"written":  strconv.FormatInt(m.Written, 10),
-		}).Info()
+		})
+		if rid, ok := getReqID(r); ok {
+			le = le.WithField("request", rid)
+		}
+		le.Info()
 		return err
 	}
 }
@@ -43,8 +70,12 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		defer func() {
-			if r := recover(); r != nil {
-				Logger.WithField("type", "recovery").Error(r)
+			if rec := recover(); rec != nil {
+				le := Logger.WithField("type", "recovery")
+				if rid, ok := getReqID(r); ok {
+					le = le.WithField("request", rid)
+				}
+				le.Error(rec)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()
@@ -76,10 +107,18 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 				}
 				jw = jw.Message(err.Error())
 			}
+			if rid, ok := getReqID(r); ok {
+				le = le.WithField("request", rid)
+			}
 			le.Error(err.Error())
 			_, err := jw.Send()
 			return err
 		}
 		return nil
 	}
+}
+
+func getReqID(r *http.Request) (string, bool) {
+	v, _ := r.Context().Value(reqIDKey).(string)
+	return v, v != ""
 }
