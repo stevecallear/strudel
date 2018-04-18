@@ -17,10 +17,10 @@ var (
 	// Logger is the logger used for all middleware
 	Logger *logrus.Logger
 
-	// NextID returns the next unique id string
-	NextID = func() string {
-		u := uuid.Must(uuid.NewV4())
-		return u.String()
+	// GetRequestID returns the id for the specified request
+	GetRequestID = func(r *http.Request) (string, bool) {
+		v, _ := r.Context().Value(reqIDKey).(string)
+		return v, v != ""
 	}
 
 	reqIDKey = contextKey("requestid")
@@ -36,7 +36,8 @@ func init() {
 // RequestTracking is a request tracking middleware function
 func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		ctx := context.WithValue(r.Context(), reqIDKey, NextID())
+		id := uuid.Must(uuid.NewV4()).String()
+		ctx := context.WithValue(r.Context(), reqIDKey, id)
 		return n(w, r.WithContext(ctx))
 	}
 }
@@ -58,7 +59,7 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 			"duration": m.Duration.String(),
 			"written":  strconv.FormatInt(m.Written, 10),
 		})
-		if rid, ok := getReqID(r); ok {
+		if rid, ok := GetRequestID(r); ok {
 			le = le.WithField("request", rid)
 		}
 		le.Info()
@@ -72,7 +73,7 @@ func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 		defer func() {
 			if rec := recover(); rec != nil {
 				le := Logger.WithField("type", "recovery")
-				if rid, ok := getReqID(r); ok {
+				if rid, ok := GetRequestID(r); ok {
 					le = le.WithField("request", rid)
 				}
 				le.Error(rec)
@@ -107,7 +108,7 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 				}
 				jw = jw.Message(err.Error())
 			}
-			if rid, ok := getReqID(r); ok {
+			if rid, ok := GetRequestID(r); ok {
 				le = le.WithField("request", rid)
 			}
 			le.Error(err.Error())
@@ -116,9 +117,4 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 		}
 		return nil
 	}
-}
-
-func getReqID(r *http.Request) (string, bool) {
-	v, _ := r.Context().Value(reqIDKey).(string)
-	return v, v != ""
 }
