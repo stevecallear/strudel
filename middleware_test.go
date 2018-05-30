@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -96,6 +97,24 @@ func TestRequestLogging(t *testing.T) {
 				"code":    201,
 			},
 		},
+		{
+			name: "should log the bytes written",
+			rid:  "requestId",
+			req:  httptest.NewRequest("POST", "/path", nil),
+			fn: func(w http.ResponseWriter, _ *http.Request) error {
+				fmt.Fprintf(w, "data")
+				return nil
+			},
+			exp: map[string]interface{}{
+				"type":    "request",
+				"request": "requestId",
+				"method":  "POST",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    200,
+				"written": 4,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,8 +132,10 @@ func TestRequestLogging(t *testing.T) {
 						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
 							t.Errorf("got %v, expected nil", err)
 						}
-						if c, ok := act["code"]; ok {
-							act["code"] = int(c.(float64))
+						for _, k := range []string{"code", "written"} {
+							if v, ok := act[k]; ok {
+								act[k] = int(v.(float64))
+							}
 						}
 					}
 					for k, v := range tt.exp {
