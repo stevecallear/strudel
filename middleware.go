@@ -3,7 +3,6 @@ package strudel
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gamegos/jsend"
@@ -55,9 +54,9 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 			"host":     r.Host,
 			"method":   r.Method,
 			"path":     p,
-			"code":     strconv.Itoa(m.Code),
+			"code":     m.Code,
 			"duration": m.Duration.String(),
-			"written":  strconv.FormatInt(m.Written, 10),
+			"written":  m.Written,
 		})
 		if rid, ok := GetRequestID(r); ok {
 			le = le.WithField("request", rid)

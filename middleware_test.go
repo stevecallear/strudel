@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,7 +59,7 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "GET",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "500",
+				"code":    500,
 			},
 			err: err,
 		},
@@ -76,7 +77,7 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "GET",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "301",
+				"code":    301,
 			},
 		},
 		{
@@ -93,7 +94,25 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "POST",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "201",
+				"code":    201,
+			},
+		},
+		{
+			name: "should log the bytes written",
+			rid:  "requestId",
+			req:  httptest.NewRequest("POST", "/path", nil),
+			fn: func(w http.ResponseWriter, _ *http.Request) error {
+				fmt.Fprintf(w, "data")
+				return nil
+			},
+			exp: map[string]interface{}{
+				"type":    "request",
+				"request": "requestId",
+				"method":  "POST",
+				"host":    "example.com",
+				"path":    "/path",
+				"code":    200,
+				"written": 4,
 			},
 		},
 	}
@@ -112,6 +131,11 @@ func TestRequestLogging(t *testing.T) {
 					if buf.Len() > 0 {
 						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
 							t.Errorf("got %v, expected nil", err)
+						}
+						for _, k := range []string{"code", "written"} {
+							if v, ok := act[k]; ok {
+								act[k] = int(v.(float64))
+							}
 						}
 					}
 					for k, v := range tt.exp {
