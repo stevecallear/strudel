@@ -58,7 +58,7 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "GET",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "500",
+				"code":    500,
 			},
 			err: err,
 		},
@@ -76,7 +76,7 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "GET",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "301",
+				"code":    301,
 			},
 		},
 		{
@@ -93,7 +93,7 @@ func TestRequestLogging(t *testing.T) {
 				"method":  "POST",
 				"host":    "example.com",
 				"path":    "/path",
-				"code":    "201",
+				"code":    201,
 			},
 		},
 	}
@@ -112,6 +112,9 @@ func TestRequestLogging(t *testing.T) {
 					if buf.Len() > 0 {
 						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
 							t.Errorf("got %v, expected nil", err)
+						}
+						if c, ok := act["code"]; ok {
+							act["code"] = int(c.(float64))
 						}
 					}
 					for k, v := range tt.exp {

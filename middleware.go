@@ -55,7 +55,7 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 			"host":     r.Host,
 			"method":   r.Method,
 			"path":     p,
-			"code":     strconv.Itoa(m.Code),
+			"code":     m.Code,
 			"duration": m.Duration.String(),
 			"written":  strconv.FormatInt(m.Written, 10),
 		})
