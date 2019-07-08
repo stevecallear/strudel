@@ -124,37 +124,39 @@ func TestRequestLogging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withRequestID(tt.rid, func() {
-				buf := bytes.NewBuffer(nil)
+			restoreRequestID := setRequestID(tt.rid)
+			defer restoreRequestID()
 
-				withLogger(buf, func() {
-					rec := httptest.NewRecorder()
+			buf := bytes.NewBuffer(nil)
 
-					err := strudel.RequestLogging(tt.fn)(rec, tt.req)
-					if err != tt.err {
-						t.Errorf("got %v, expected %v", err, tt.err)
+			restoreLogger := setLogger(buf)
+			defer restoreLogger()
+
+			rec := httptest.NewRecorder()
+
+			err := strudel.RequestLogging(tt.fn)(rec, tt.req)
+			if err != tt.err {
+				t.Errorf("got %v, expected %v", err, tt.err)
+			}
+
+			act := map[string]interface{}{}
+			if buf.Len() > 0 {
+				if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+					t.Errorf("got %v, expected nil", err)
+				}
+
+				for _, k := range []string{"code", "written"} {
+					if v, ok := act[k]; ok {
+						act[k] = int(v.(float64))
 					}
+				}
+			}
 
-					act := map[string]interface{}{}
-					if buf.Len() > 0 {
-						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
-							t.Errorf("got %v, expected nil", err)
-						}
-
-						for _, k := range []string{"code", "written"} {
-							if v, ok := act[k]; ok {
-								act[k] = int(v.(float64))
-							}
-						}
-					}
-
-					for k, v := range tt.exp {
-						if act[k] != v {
-							t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
-						}
-					}
-				})
-			})
+			for k, v := range tt.exp {
+				if act[k] != v {
+					t.Errorf("got %s:%v, expected %s:%v", k, act[k], k, v)
+				}
+			}
 		})
 	}
 }
@@ -217,37 +219,39 @@ func TestRecovery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withRequestID(tt.rid, func() {
-				buf := bytes.NewBuffer(nil)
+			restoreRequestID := setRequestID(tt.rid)
+			defer restoreRequestID()
 
-				withLogger(buf, func() {
-					rec := httptest.NewRecorder()
+			buf := bytes.NewBuffer(nil)
 
-					err := strudel.Recovery(func(http.ResponseWriter, *http.Request) error {
-						return tt.fn()
-					})(rec, nil)
-					if err != tt.err {
-						t.Errorf("got %v, expected %v", err, tt.err)
-					}
+			restoreLogger := setLogger(buf)
+			defer restoreLogger()
 
-					if rec.Code != tt.code {
-						t.Errorf("got %d, expected %d", rec.Code, tt.code)
-					}
+			rec := httptest.NewRecorder()
 
-					act := map[string]interface{}{}
-					if buf.Len() > 0 {
-						if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
-							t.Errorf("got %v, expected nil", err)
-						}
+			err := strudel.Recovery(func(http.ResponseWriter, *http.Request) error {
+				return tt.fn()
+			})(rec, nil)
+			if err != tt.err {
+				t.Errorf("got %v, expected %v", err, tt.err)
+			}
 
-						delete(act, "time")
-					}
+			if rec.Code != tt.code {
+				t.Errorf("got %d, expected %d", rec.Code, tt.code)
+			}
 
-					if !reflect.DeepEqual(act, tt.exp) {
-						t.Errorf("got %v, expected %v", act, tt.exp)
-					}
-				})
-			})
+			act := map[string]interface{}{}
+			if buf.Len() > 0 {
+				if err = json.Unmarshal(buf.Bytes(), &act); err != nil {
+					t.Errorf("got %v, expected nil", err)
+				}
+
+				delete(act, "time")
+			}
+
+			if !reflect.DeepEqual(act, tt.exp) {
+				t.Errorf("got %v, expected %v", act, tt.exp)
+			}
 
 		})
 	}
@@ -410,81 +414,80 @@ func TestErrorHandling(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withRequestID(tt.rid, func() {
-				buf := bytes.NewBuffer(nil)
+			restoreRequestID := setRequestID(tt.rid)
+			defer restoreRequestID()
 
-				withLogger(buf, func() {
-					rec := httptest.NewRecorder()
+			buf := bytes.NewBuffer(nil)
 
-					err := strudel.ErrorHandling(func(http.ResponseWriter, *http.Request) error {
-						return tt.err
-					})(rec, nil)
-					if err != nil {
-						t.Errorf("got %v, expected nil", err)
-					}
+			restoreLogger := setLogger(buf)
+			defer restoreLogger()
 
-					if rec.Code != tt.code {
-						t.Errorf("got %d, expected %d", rec.Code, tt.code)
-					}
+			rec := httptest.NewRecorder()
 
-					body := map[string]interface{}{}
-					if rec.Body.Len() > 0 {
-						if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-							t.Errorf("got %v, expected nil", err)
-						}
-					}
+			err := strudel.ErrorHandling(func(http.ResponseWriter, *http.Request) error {
+				return tt.err
+			})(rec, nil)
+			if err != nil {
+				t.Errorf("got %v, expected nil", err)
+			}
 
-					if !reflect.DeepEqual(body, tt.body) {
-						t.Errorf("got %v, expected %v", body, tt.body)
-					}
+			if rec.Code != tt.code {
+				t.Errorf("got %d, expected %d", rec.Code, tt.code)
+			}
 
-					log := map[string]interface{}{}
-					if buf.Len() > 0 {
-						if err = json.Unmarshal(buf.Bytes(), &log); err != nil {
-							t.Errorf("got %v, expected nil", err)
-						}
+			body := map[string]interface{}{}
+			if rec.Body.Len() > 0 {
+				if err = json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Errorf("got %v, expected nil", err)
+				}
+			}
 
-						delete(log, "time")
+			if !reflect.DeepEqual(body, tt.body) {
+				t.Errorf("got %v, expected %v", body, tt.body)
+			}
 
-						if c, ok := log["code"]; ok {
-							log["code"] = int(c.(float64))
-						}
-					}
+			log := map[string]interface{}{}
+			if buf.Len() > 0 {
+				if err = json.Unmarshal(buf.Bytes(), &log); err != nil {
+					t.Errorf("got %v, expected nil", err)
+				}
 
-					if !reflect.DeepEqual(log, tt.log) {
-						t.Errorf("got %#v, expected %#v", log, tt.log)
-					}
-				})
-			})
+				delete(log, "time")
+
+				if c, ok := log["code"]; ok {
+					log["code"] = int(c.(float64))
+				}
+			}
+
+			if !reflect.DeepEqual(log, tt.log) {
+				t.Errorf("got %#v, expected %#v", log, tt.log)
+			}
 		})
 	}
 }
 
-func withLogger(w io.Writer, fn func()) {
+func setLogger(w io.Writer) func() {
 	pl := strudel.Logger
-
-	defer func() {
-		strudel.Logger = pl
-	}()
 
 	l := logrus.New()
 	l.Formatter = new(logrus.JSONFormatter)
 	l.Out = w
+
 	strudel.Logger = l
 
-	fn()
+	return func() {
+		strudel.Logger = pl
+	}
 }
 
-func withRequestID(v string, fn func()) {
+func setRequestID(v string) func() {
 	pfn := strudel.GetRequestID
-
-	defer func() {
-		strudel.GetRequestID = pfn
-	}()
 
 	strudel.GetRequestID = func(*http.Request) (string, bool) {
 		return v, v != ""
 	}
 
-	fn()
+	return func() {
+		strudel.GetRequestID = pfn
+	}
 }
