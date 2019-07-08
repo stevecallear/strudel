@@ -24,15 +24,17 @@ import (
 )
 
 func main() {
-	c := janice.New(strudel.ErrorHandling)
-	m := http.NewServeMux()
-	m.Handle("/", c.Then(func(w http.ResponseWriter, r *http.Request) error {
+	chain := janice.New(strudel.ErrorHandling)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", chain.Then(func(w http.ResponseWriter, r *http.Request) error {
 		return strudel.NewError("resource not found").
 			WithCode(http.StatusNotFound).
 			WithField("resourceId", "abc123").
 			WithLogField("sensitiveId", "cde456")
 	}))
-	h := janice.New(strudel.RequestTracking, strudel.Recovery, strudel.RequestLogging).Then(janice.Wrap(m))
+
+	h := janice.New(strudel.RequestTracking, strudel.Recovery, strudel.RequestLogging).Then(janice.Wrap(mux))
 	http.ListenAndServe(":8080", h)
 }
 ```
