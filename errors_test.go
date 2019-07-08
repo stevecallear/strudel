@@ -11,7 +11,9 @@ import (
 func TestNewError(t *testing.T) {
 	t.Run("should set the message", func(t *testing.T) {
 		const exp = "error"
+
 		act := strudel.NewError(exp).Error()
+
 		if act != exp {
 			t.Errorf("got %s, expected %s", act, exp)
 		}
@@ -38,8 +40,10 @@ func TestError_WithCode(t *testing.T) {
 			exp:  http.StatusNotFound,
 		},
 	}
+
 	for _, tt := range tests {
 		act := tt.err.WithCode(tt.code).Code()
+
 		if act != tt.exp {
 			t.Errorf("got %d, expected %d", act, tt.exp)
 		}
@@ -83,9 +87,11 @@ func TestError_WithField(t *testing.T) {
 			exp:   strudel.Fields{"key": "valueB"},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			act := tt.err.WithField(tt.key, tt.value).Fields()
+
 			if !reflect.DeepEqual(act, tt.exp) {
 				t.Errorf("got %v, expected %v", act, tt.exp)
 			}
@@ -132,9 +138,11 @@ func TestError_WithFields(t *testing.T) {
 			exp:    strudel.Fields{"key": val},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			act := tt.err.WithFields(tt.fields).Fields()
+
 			if !reflect.DeepEqual(act, tt.exp) {
 				t.Errorf("got %v, expected %v", act, tt.exp)
 			}
@@ -179,9 +187,11 @@ func TestError_WithLogField(t *testing.T) {
 			exp:   strudel.Fields{"key": "valueB"},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			act := tt.err.WithLogField(tt.key, tt.value).LogFields()
+
 			if !reflect.DeepEqual(act, tt.exp) {
 				t.Errorf("got %v, expected %v", act, tt.exp)
 			}
@@ -228,9 +238,11 @@ func TestError_WithLogFields(t *testing.T) {
 			exp:    strudel.Fields{"key": val},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			act := tt.err.WithLogFields(tt.fields).LogFields()
+
 			if !reflect.DeepEqual(act, tt.exp) {
 				t.Errorf("got %v, expected %v", act, tt.exp)
 			}
@@ -241,10 +253,12 @@ func TestError_WithLogFields(t *testing.T) {
 func TestError_Fields(t *testing.T) {
 	t.Run("should not include log fields", func(t *testing.T) {
 		exp := strudel.Fields{"field": "value"}
+
 		act := strudel.NewError("error").
 			WithFields(exp).
 			WithLogField("logField", "value").
 			Fields()
+
 		if !reflect.DeepEqual(act, exp) {
 			t.Errorf("got %v, expected %v", act, exp)
 		}
@@ -271,12 +285,14 @@ func TestError_LogFields(t *testing.T) {
 			exp:       strudel.Fields{"field": "logFieldValue"},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			act := strudel.NewError("error").
 				WithFields(tt.fields).
 				WithLogFields(tt.logFields).
 				LogFields()
+
 			if !reflect.DeepEqual(act, tt.exp) {
 				t.Errorf("got %v, expected %v", act, tt.exp)
 			}

@@ -6,10 +6,9 @@ import (
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gamegos/jsend"
+	"github.com/gofrs/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/stevecallear/janice"
-
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -37,6 +36,7 @@ func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		id := uuid.Must(uuid.NewV4()).String()
 		ctx := context.WithValue(r.Context(), reqIDKey, id)
+
 		return n(w, r.WithContext(ctx))
 	}
 }
@@ -45,10 +45,12 @@ func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
 func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		p := r.URL.String()
+
 		var err error
 		m := httpsnoop.CaptureMetricsFn(w, func(ww http.ResponseWriter) {
 			err = n(ww, r)
 		})
+
 		le := Logger.WithFields(logrus.Fields{
 			"type":     "request",
 			"host":     r.Host,
@@ -58,10 +60,13 @@ func RequestLogging(n janice.HandlerFunc) janice.HandlerFunc {
 			"duration": m.Duration.String(),
 			"written":  m.Written,
 		})
+
 		if rid, ok := GetRequestID(r); ok {
 			le = le.WithField("request", rid)
 		}
+
 		le.Info()
+
 		return err
 	}
 }
@@ -72,13 +77,17 @@ func Recovery(n janice.HandlerFunc) janice.HandlerFunc {
 		defer func() {
 			if rec := recover(); rec != nil {
 				le := Logger.WithField("type", "recovery")
+
 				if rid, ok := GetRequestID(r); ok {
 					le = le.WithField("request", rid)
 				}
+
 				le.Error(rec)
+
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()
+
 		return n(w, r)
 	}
 }
@@ -88,9 +97,11 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if err := n(w, r); err != nil {
 			le := Logger.WithField("type", "error")
+
 			jw := jsend.Wrap(w).
 				Status(http.StatusInternalServerError).
 				Message(http.StatusText(http.StatusInternalServerError))
+
 			if err, ok := err.(*Error); ok {
 				c := err.Code()
 				if c > 0 {
@@ -99,21 +110,28 @@ func ErrorHandling(n janice.HandlerFunc) janice.HandlerFunc {
 				if c >= 400 && c < 600 {
 					jw = jw.Status(c)
 				}
+
 				if f := err.Fields(); len(f) > 0 {
 					jw = jw.Data(f)
 				}
+
 				if lf := err.LogFields(); len(lf) > 0 {
 					le = le.WithField("data", lf)
 				}
+
 				jw = jw.Message(err.Error())
 			}
+
 			if rid, ok := GetRequestID(r); ok {
 				le = le.WithField("request", rid)
 			}
+
 			le.Error(err.Error())
+
 			_, err := jw.Send()
 			return err
 		}
+
 		return nil
 	}
 }

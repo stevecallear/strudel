@@ -27,6 +27,7 @@ func NewError(msg string) *Error {
 // WithCode sets the error code
 func (e *Error) WithCode(code int) *Error {
 	e.code = code
+
 	return e
 }
 
@@ -35,6 +36,7 @@ func (e *Error) WithField(key string, value interface{}) *Error {
 	if strings.TrimSpace(key) != "" {
 		e.fields[key] = value
 	}
+
 	return e
 }
 
@@ -43,6 +45,7 @@ func (e *Error) WithFields(f Fields) *Error {
 	for k, v := range f {
 		e.WithField(k, v)
 	}
+
 	return e
 }
 
@@ -51,6 +54,7 @@ func (e *Error) WithLogField(key string, value interface{}) *Error {
 	if strings.TrimSpace(key) != "" {
 		e.logFields[key] = value
 	}
+
 	return e
 }
 
@@ -59,6 +63,7 @@ func (e *Error) WithLogFields(f Fields) *Error {
 	for k, v := range f {
 		e.WithLogField(k, v)
 	}
+
 	return e
 }
 
@@ -83,8 +88,10 @@ func (e *Error) LogFields() Fields {
 	for k, v := range e.fields {
 		f[k] = v
 	}
+
 	for k, v := range e.logFields {
 		f[k] = v
 	}
+
 	return f
 }
