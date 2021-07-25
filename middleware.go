@@ -6,7 +6,7 @@ import (
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gamegos/jsend"
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/stevecallear/janice"
 )
@@ -34,7 +34,7 @@ func init() {
 // RequestTracking is a request tracking middleware function
 func RequestTracking(n janice.HandlerFunc) janice.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		id := uuid.Must(uuid.NewV4()).String()
+		id := uuid.NewString()
 		ctx := context.WithValue(r.Context(), reqIDKey, id)
 
 		return n(w, r.WithContext(ctx))
