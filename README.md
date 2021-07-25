@@ -1,5 +1,5 @@
 # Strudel
-[![Build Status](https://travis-ci.org/stevecallear/strudel.svg?branch=master)](https://travis-ci.org/stevecallear/strudel)
+[![Build Status](https://github.com/stevecallear/strudel/actions/workflows/build.yml/badge.svg)](https://github.com/stevecallear/strudel/actions/workflows/build.yml)
 [![codecov](https://codecov.io/gh/stevecallear/strudel/branch/master/graph/badge.svg)](https://codecov.io/gh/stevecallear/strudel)
 [![Go Report Card](https://goreportcard.com/badge/github.com/stevecallear/strudel)](https://goreportcard.com/report/github.com/stevecallear/strudel)
 
